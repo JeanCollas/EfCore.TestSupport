@@ -164,6 +164,39 @@ namespace TestSupport.EfSchemeCompare
             }
         }
 
+        /// <summary>
+        /// This returns a string per error, in human-readable form
+        /// </summary>
+        /// <param name="logs"></param>
+        /// <param name="parentNames"></param>
+        /// <returns></returns>
+        public static IEnumerable<string> ListAllErrorsHtml(IReadOnlyList<CompareLog> logs, Stack<string> parentNames = null)
+        {
+            //This only includes the DbContext if there were multiple DbContexts at the top layer
+            var firstCall = parentNames == null;
+            var doPushPop = !(firstCall && logs.GroupBy(x => x.Type).Count() < 2);
+            if (firstCall)
+            {
+                parentNames = new Stack<string>();
+            }
+
+            foreach (var log in logs)
+            {
+
+                if (log.State != CompareState.Ok)
+                    yield return FormFullRefErrorHtml(log, parentNames);
+                if (log.SubLogs.Any())
+                {
+                    if (doPushPop) parentNames.Push(log.Name);
+                    foreach (var errors in ListAllErrorsHtml(log.SubLogs, parentNames))
+                    {
+                        yield return errors;
+                    }
+                    if (doPushPop) {parentNames.Pop();yield return "<br/>";}
+                }
+            }
+        }
+
         //-------------------------------------------------------
         //internal
 
@@ -263,7 +296,14 @@ namespace TestSupport.EfSchemeCompare
                 start += string.Join("->", parents.ToArray().Reverse()) + "->";
             return log.ToStringDifferentStart(start);
         }
+        private static string FormFullRefErrorHtml(CompareLog log, Stack<string> parents)
+        {
+            string start = $"<b>{string.Join(".", parents.ToArray().Reverse())}</b>.{log.Name}: {log.State.SplitCamelCaseToUpper()}: ";
+            if (parents.Any())
+                start += string.Join("->", parents.ToArray().Reverse()) + "->";
+            return log.ToStringDifferentStart(start);
+        }
 
-    }  
-    
+    }
+
 }

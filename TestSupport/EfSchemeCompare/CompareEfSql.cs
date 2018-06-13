@@ -25,17 +25,19 @@ namespace TestSupport.EfSchemeCompare
     {
         private readonly Assembly _callingAssembly;
         private readonly CompareEfSqlConfig _config;
-
+        private readonly bool _forceStage2=false;
         private readonly List<CompareLog> _logs = new List<CompareLog>();
 
         /// <summary>
         /// This creates the comparer class that you use for comparing EF Core DbContexts to a database
         /// </summary>
         /// <param name="config"></param>
-        public CompareEfSql(CompareEfSqlConfig config = null)
+        /// <param name="forceStage2"></param>
+        public CompareEfSql(CompareEfSqlConfig config = null, bool forceStage2=false)
         {
             _callingAssembly = Assembly.GetCallingAssembly();
             _config = config ?? new CompareEfSqlConfig();
+            _forceStage2 = forceStage2;
         }
 
         /// <summary>
@@ -43,12 +45,14 @@ namespace TestSupport.EfSchemeCompare
         /// Each error is on a separate line
         /// </summary>
         public string GetAllErrors => string.Join("\n", CompareLog.ListAllErrors(Logs));
+        public string GetAllErrorsHtml => string.Join("<br/>\n", CompareLog.ListAllErrorsHtml(Logs));
 
         /// <summary>
         /// This gives you access to the full log. but its not an easy thing to parse
         /// Look at the CompareLog class for various static methods that will output the log in a human-readable format
         /// </summary>
         public IReadOnlyList<CompareLog> Logs => _logs.ToImmutableList();
+
 
         /// <summary>
         /// This will compare one or more DbContext against database pointed to the first DbContext.
@@ -132,11 +136,11 @@ namespace TestSupport.EfSchemeCompare
                 hasErrors |= stage1Comparer.CompareModelToDatabase(databaseModel);
             }
 
-            if (hasErrors) return true;
+            if (!_forceStage2 && hasErrors) return true;
 
             //No errors, so its worth running the second phase
             var stage2Comparer = new Stage2Comparer(databaseModel, _config.LogsToIgnore);
-            hasErrors = stage2Comparer.CompareLogsToDatabase(_logs);
+            hasErrors |= stage2Comparer.CompareLogsToDatabase(_logs);
             _logs.AddRange(stage2Comparer.Logs);
             return hasErrors;
         }
