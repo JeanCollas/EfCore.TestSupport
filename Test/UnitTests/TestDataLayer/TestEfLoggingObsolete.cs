@@ -1,7 +1,6 @@
 ﻿// Copyright (c) 2017 Jon P Smith, GitHub: JonPSmith, web: http://www.thereformedprogrammer.net/
 // Licensed under MIT licence. See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using DataLayer.BookApp;
@@ -14,13 +13,13 @@ using Xunit;
 using Xunit.Abstractions;
 using Xunit.Extensions.AssertExtensions;
 
-namespace Test.UnitTests.DataLayer
+namespace Test.UnitTests.TestDataLayer
 {
-    public class TestEfLogging
+    public class TestEfLoggingObsolete
     {
         private readonly ITestOutputHelper _output; //#A
 
-        public TestEfLogging(ITestOutputHelper output) //#B
+        public TestEfLoggingObsolete(ITestOutputHelper output) //#B
         {
             _output = output;
         }

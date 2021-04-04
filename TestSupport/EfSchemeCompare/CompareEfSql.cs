@@ -53,7 +53,6 @@ namespace TestSupport.EfSchemeCompare
         /// </summary>
         public IReadOnlyList<CompareLog> Logs => _logs.ToImmutableList();
 
-
         /// <summary>
         /// This will compare one or more DbContext against database pointed to the first DbContext.
         /// </summary>
@@ -128,42 +127,54 @@ namespace TestSupport.EfSchemeCompare
 
         private bool FinishRestOfCompare(string configOrConnectionString, DbContext[] dbContexts, IDesignTimeServices designTimeService)
         {
-            var databaseModel = GetDatabaseModelViaScaffolder(dbContexts[0], configOrConnectionString, designTimeService);
+            var databaseModel = GetDatabaseModelViaScaffolder(dbContexts, configOrConnectionString, designTimeService);
             bool hasErrors = false;
             foreach (var context in dbContexts)
             {
-                var stage1Comparer = new Stage1Comparer(context.Model, context.GetType().Name, _logs, _config.LogsToIgnore);
+                var stage1Comparer = new Stage1Comparer(context.Model, context.GetType().Name, _config, _logs);
                 hasErrors |= stage1Comparer.CompareModelToDatabase(databaseModel);
             }
 
             if (!_forceStage2 && hasErrors) return true;
 
             //No errors, so its worth running the second phase
-            var stage2Comparer = new Stage2Comparer(databaseModel, _config.LogsToIgnore);
-            hasErrors |= stage2Comparer.CompareLogsToDatabase(_logs);
+            var stage2Comparer = new Stage2Comparer(databaseModel, _config);
+            hasErrors = stage2Comparer.CompareLogsToDatabase(_logs);
             _logs.AddRange(stage2Comparer.Logs);
             return hasErrors;
         }
 
-        private  DatabaseModel GetDatabaseModelViaScaffolder(DbContext context, string configOrConnectionString, IDesignTimeServices designTimeService)
+        private  DatabaseModel GetDatabaseModelViaScaffolder(DbContext[] contexts, string configOrConnectionString, IDesignTimeServices designTimeService)
         {
             var serviceProvider = designTimeService.GetDesignTimeProvider();
             var factory = serviceProvider.GetService<IDatabaseModelFactory>();
             var connectionString = configOrConnectionString == null
-                ? context.Database.GetDbConnection().ConnectionString
+                ? contexts[0].Database.GetDbConnection().ConnectionString
                 : GetConfigurationOrActualString(configOrConnectionString);
 
             var databaseModel = factory.Create(connectionString, new string[] { }, new string[] { });
-            RemoveAnyTabletoIgnore(databaseModel);
+            RemoveAnyTableToIgnore(databaseModel, contexts);
             return databaseModel;
         }
 
-        private void RemoveAnyTabletoIgnore(DatabaseModel databaseModel)
-        {
-            if (_config.TablesToIgnoreCommaDelimited != null)
+        private void RemoveAnyTableToIgnore(DatabaseModel databaseModel, DbContext[] contexts)
             {
-                var tablesToRemove = new List<DatabaseTable>();
-                foreach (var tableToIgnore in _config.TablesToIgnoreCommaDelimited.Split(',').Select(x => x.Trim()))
+
+            var tablesToRemove = new List<DatabaseTable>();
+            if (_config.TablesToIgnoreCommaDelimited == null)
+            {
+                //We remove all tables not mapped by the contexts
+
+                var tablesInContext = contexts.SelectMany(x => x.Model.GetEntityTypes()).Where(x => !x.IsQueryType)
+                    .Select(x => x.Relational().FormSchemaTable()).ToList();
+                tablesToRemove = databaseModel.Tables
+                    .Where(x => !tablesInContext.Contains(x.FormSchemaTable(databaseModel.DefaultSchema), StringComparer.InvariantCultureIgnoreCase)).ToList();
+            }
+            else
+            {
+                
+                foreach (var tableToIgnore in _config.TablesToIgnoreCommaDelimited.Split(',')
+                    .Select(x => x.Trim()).Where(x => !string.IsNullOrEmpty(x)))
                 {
                     var split = tableToIgnore.Split('.').Select(x => x.Trim()).ToArray();
                     var schema = split.Length == 1 ? databaseModel.DefaultSchema : split[0];
@@ -176,10 +187,10 @@ namespace TestSupport.EfSchemeCompare
                             $"The TablesToIgnoreCommaDelimited config property contains a table name of '{tableToIgnore}', which was not found in the database");
                     tablesToRemove.Add(tableToRemove);
                 }
+            }
                 foreach (var tableToRemove in tablesToRemove)
                 {
                     databaseModel.Tables.Remove(tableToRemove);
-                }
             }
         }
 

@@ -7,6 +7,9 @@ using Microsoft.Extensions.Logging;
 
 namespace TestSupport.EfHelpers
 {
+    /// <summary>
+    /// Old logging provider, but kept as some unit test code still uses it
+    /// </summary>
     public class MyLoggerProvider : ILoggerProvider
     {
         private readonly List<LogOutput> _logs;
@@ -24,11 +27,19 @@ namespace TestSupport.EfHelpers
             _logLevel = logLevel;
         }
 
+        /// <summary>
+        /// Create a logger
+        /// </summary>
+        /// <param name="categoryName"></param>
+        /// <returns></returns>
         public ILogger CreateLogger(string categoryName)
         {
             return new MyLogger(_logs, _logLevel);
         }
 
+        /// <summary>
+        /// Displose - does nothing
+        /// </summary>
         public void Dispose()
         {
         }

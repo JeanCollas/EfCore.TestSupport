@@ -32,12 +32,13 @@ namespace TestSupport.EfSchemeCompare.Internal
             return log;
         }
 
-        public bool CheckDifferent(string expected, string found, CompareAttributes attribute, string name = null)
+        public bool CheckDifferent(string expected, string found, CompareAttributes attribute,
+            StringComparison caseComparison, string name = null)
         {
-            if (expected != found && expected?.Replace(" ", "") != found?.Replace(" ", ""))
+            if (!string.Equals(expected, found, caseComparison) && 
+                !string.Equals( expected?.Replace(" ", ""), found?.Replace(" ", ""), caseComparison))
             {
-                AddToLogsIfNotIgnored(new CompareLog(_type, CompareState.Different, name ?? _defaultName, attribute, expected, found));
-                return true;
+                return AddToLogsIfNotIgnored(new CompareLog(_type, CompareState.Different, name ?? _defaultName, attribute, expected, found));
             }
             return false;
         }
@@ -57,16 +58,35 @@ namespace TestSupport.EfSchemeCompare.Internal
             AddToLogsIfNotIgnored(new CompareLog(_type, CompareState.ExtraInDatabase, name ?? _defaultName, attribute, null, found));
         }
 
+        /// <summary>
+        /// This is for adding a warning.
+        /// </summary>
+        /// <param name="errorMessage">This should be the warning message</param>
+        /// <param name="expected">add this if something was missing</param>
+        /// <param name="found">add this if something extra was found</param>
+        public void Warning(string errorMessage, string expected = null, string found = null)
+        {
+            AddToLogsIfNotIgnored(new CompareLog(CompareType.Database, CompareState.Warning, errorMessage, CompareAttributes.NotSet, expected, found));
+        }
+
         //------------------------------------------------------
         //private methods
 
-        private void AddToLogsIfNotIgnored(CompareLog log)
+        /// <summary>
+        /// Only adds the 
+        /// </summary>
+        /// <param name="log"></param>
+        /// <returns></returns>
+        private bool AddToLogsIfNotIgnored(CompareLog log)
         {
             if (!log.ShouldIIgnoreThisLog(_ignoreList))
             {
                 _compareLogs.Add(log);
                 _setErrorHasHappened();
+                return true;
             }
+
+            return false;
         }
     }
 }

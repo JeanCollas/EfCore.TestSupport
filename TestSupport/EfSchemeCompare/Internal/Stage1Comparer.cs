@@ -8,7 +8,6 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
 
 [assembly: InternalsVisibleTo("Test")]
@@ -20,17 +19,21 @@ namespace TestSupport.EfSchemeCompare.Internal
         private readonly IModel _model;
         private readonly string _dbContextName;
         private readonly IReadOnlyList<CompareLog> _ignoreList;
+        private readonly StringComparer _caseComparer;
+        private readonly StringComparison _caseComparison;
         private bool _hasErrors;
 
         private readonly List<CompareLog> _logs;
         public IReadOnlyList<CompareLog> Logs => _logs.ToImmutableList();
 
-        public Stage1Comparer(IModel model, string dbContextName, List<CompareLog> logs = null, IReadOnlyList<CompareLog> ignoreList = null)
+        public Stage1Comparer(IModel model, string dbContextName, CompareEfSqlConfig config = null, List<CompareLog> logs = null)
         {
             _model = model;
             _dbContextName = dbContextName;
             _logs = logs ?? new List<CompareLog>();
-            _ignoreList = ignoreList ?? new List<CompareLog>();
+            _ignoreList = config?.LogsToIgnore ?? new List<CompareLog>();
+            _caseComparer = config?.CaseComparer ?? StringComparer.CurrentCulture;
+            _caseComparison = _caseComparer.GetStringComparison();
         }
 
         public bool CompareModelToDatabase(DatabaseModel databaseModel)
@@ -41,18 +44,21 @@ namespace TestSupport.EfSchemeCompare.Internal
             dbLogger.MarkAsOk(_dbContextName);
             CheckDatabaseOk(_logs.Last(), _model.Relational(), databaseModel);
 
-            var tableDict = databaseModel.Tables.ToDictionary(x => x.Name);
-            foreach (var entityType in _model.GetEntityTypes())
+            var tableDict = databaseModel.Tables.ToDictionary(x => x.FormSchemaTable(databaseModel.DefaultSchema), _caseComparer);
+            var dbQueries = _model.GetEntityTypes().Where(x => x.IsQueryType).ToList();
+            if (dbQueries.Any())
+                dbLogger.Warning("EfSchemaCompare does not check DbQuery types", null, string.Join(", ", dbQueries.Select(x => x.ClrType.Name)));
+            foreach (var entityType in _model.GetEntityTypes().Where(x => !x.IsQueryType))
             {
                 var eRel = entityType.Relational();
                 var logger = new CompareLogger(CompareType.Entity, entityType.ClrType.Name, _logs.Last().SubLogs, _ignoreList, () => _hasErrors = true);
-                if (tableDict.ContainsKey(eRel.TableName))
+                if (tableDict.ContainsKey(eRel.FormSchemaTable()))
                 {
-                    var databaseTable = tableDict[eRel.TableName];
+                    var databaseTable = tableDict[eRel.FormSchemaTable()];
                     //Checks for table matching
-                    var log = logger.MarkAsOk(eRel.TableName);
+                    var log = logger.MarkAsOk(eRel.FormSchemaTable());
                     logger.CheckDifferent(entityType.FindPrimaryKey().Relational().Name, databaseTable.PrimaryKey.Name,
-                        CompareAttributes.ConstraintName);
+                        CompareAttributes.ConstraintName, _caseComparison);
                     CompareColumns(log, entityType, databaseTable);
                     CompareForeignKeys(log, entityType, databaseTable);
                     CompareIndexes(log, entityType, databaseTable);
@@ -74,7 +80,7 @@ namespace TestSupport.EfSchemeCompare.Internal
 
         private void CompareForeignKeys(CompareLog log, IEntityType entityType, DatabaseTable table)
         {
-            var fKeyDict = table.ForeignKeys.ToDictionary(x => x.Name);
+            var fKeyDict = table.ForeignKeys.ToDictionary(x => x.Name, _caseComparer);
 
             foreach (var entityFKey in entityType.GetForeignKeys())
             {
@@ -87,7 +93,7 @@ namespace TestSupport.EfSchemeCompare.Internal
                 {       
                     //Now check every foreign key
                     var error = false;
-                    var thisKeyCols = fKeyDict[constraintName].Columns.ToDictionary(x => x.Name);
+                    var thisKeyCols = fKeyDict[constraintName].Columns.ToDictionary(x => x.Name, _caseComparer);
                     foreach (var fKeyProp in entityFKeyprops)
                     {
                         var pRel = fKeyProp.Relational();
@@ -99,7 +105,7 @@ namespace TestSupport.EfSchemeCompare.Internal
                     }
                     error |= logger.CheckDifferent(entityFKey.DeleteBehavior.ToString(), 
                         fKeyDict[constraintName].OnDelete.ConvertReferentialActionToDeleteBehavior(entityFKey.DeleteBehavior), 
-                            CompareAttributes.DeleteBehaviour);
+                            CompareAttributes.DeleteBehaviour, _caseComparison);
                     if (!error)
                         logger.MarkAsOk(constraintName);
                 }
@@ -113,12 +119,12 @@ namespace TestSupport.EfSchemeCompare.Internal
         private bool IgnoreForeignKeyIfInSameTable(IEntityType entityType, IForeignKey entityFKey, DatabaseTable table)
         {
             if (entityType.DefiningEntityType != null &&
-                entityType.DefiningEntityType.Relational().TableName == table.Name)
+                string.Equals(entityType.DefiningEntityType.Relational().TableName, table.Name, _caseComparison))
                 //if a owned table, and the owned entity's table matches this table then ignore
                 return true;
 
             //see https://github.com/aspnet/EntityFrameworkCore/issues/10345#issuecomment-345841191
-            if (entityFKey.Properties.All(x => x.DeclaringEntityType.Relational().TableName == table.Name)
+            if (entityFKey.Properties.All(x => string.Equals( x.DeclaringEntityType.Relational().TableName,  table.Name, _caseComparison))
                  && entityFKey.Properties.Select(p => p.Relational().ColumnName)
                     .SequenceEqual(entityFKey.PrincipalKey.Properties.Select(p => p.Relational().ColumnName)))
                 //If all the declaring entity type of the foreign key are all in this table, then we ignore this (table splitting case)
@@ -130,7 +136,7 @@ namespace TestSupport.EfSchemeCompare.Internal
 
         private void CompareIndexes(CompareLog log, IEntityType entityType, DatabaseTable table)
         {
-            var indexDict = table.Indexes.ToDictionary(x => x.Name);
+            var indexDict = DatabaseIndexData.GetIndexesAndUniqueConstraints(table). ToDictionary(x => x.Name, _caseComparer);
             foreach (var entityIdx in entityType.GetIndexes())
             {
                 var entityIdxprops = entityIdx.Properties;
@@ -140,7 +146,7 @@ namespace TestSupport.EfSchemeCompare.Internal
                 {
                     //Now check every column in an index
                     var error = false;
-                    var thisIdxCols = indexDict[constraintName].Columns.ToDictionary(x => x.Name);
+                    var thisIdxCols = indexDict[constraintName].Columns.ToDictionary(x => x.Name, _caseComparer);
                     foreach (var idxProp in entityIdxprops)
                     {
                         var pRel = idxProp.Relational();
@@ -151,21 +157,21 @@ namespace TestSupport.EfSchemeCompare.Internal
                         } 
                     }
                     error |= logger.CheckDifferent(entityIdx.IsUnique.ToString(), 
-                        indexDict[constraintName].IsUnique.ToString(), CompareAttributes.Unique);
+                        indexDict[constraintName].IsUnique.ToString(), CompareAttributes.Unique, _caseComparison);
                     if (!error)
                         logger.MarkAsOk(constraintName);
                 }
                 else
                 {
-                    logger.NotInDatabase(constraintName, CompareAttributes.ConstraintName);
+                    logger.NotInDatabase(constraintName, CompareAttributes.IndexConstraintName);
                 }
             }
         }
 
         private void CompareColumns(CompareLog log, IEntityType entityType, DatabaseTable table)
         {
-            var columnDict = table.Columns.ToDictionary(x => x.Name);
-            var primaryKeyDict = table.PrimaryKey.Columns.ToDictionary(x => x.Name);
+            var columnDict = table.Columns.ToDictionary(x => x.Name, _caseComparer);
+            var primaryKeyDict = table.PrimaryKey.Columns.ToDictionary(x => x.Name, _caseComparer);
 
             var efPKeyConstraintName = entityType.FindPrimaryKey().Relational().Name;
             bool pKeyError = false;
@@ -175,7 +181,7 @@ namespace TestSupport.EfSchemeCompare.Internal
                     pKeyError = true;  //extra set of pKeyError
                     _hasErrors = true;
                 });
-            pKeyLogger.CheckDifferent(efPKeyConstraintName, table.PrimaryKey.Name, CompareAttributes.ConstraintName);
+            pKeyLogger.CheckDifferent(efPKeyConstraintName, table.PrimaryKey.Name, CompareAttributes.ConstraintName, _caseComparison);
             foreach (var property in entityType.GetProperties())
             {
                 var pRel = property.Relational();
@@ -221,7 +227,7 @@ namespace TestSupport.EfSchemeCompare.Internal
             IProperty property, IKey primaryKey)
         {
             if (entityTypeDefiningEntityType == null ||
-                entityTypeDefiningEntityType.Relational().TableName != table.Name)
+                !string.Equals(entityTypeDefiningEntityType.Relational().TableName,table.Name, _caseComparison))
                 //if not a owned table, or the owned tabl has its own table then carry on
                 return false;
 
@@ -235,13 +241,14 @@ namespace TestSupport.EfSchemeCompare.Internal
 
         private bool ComparePropertyToColumn(CompareLogger logger, IProperty property, DatabaseColumn column)
         {
-            var pRel = property.Relational();
-            var error = logger.CheckDifferent(pRel.ColumnType, column.StoreType, CompareAttributes.ColumnType);
-            error |= logger.CheckDifferent(property.IsNullable.NullableAsString(), column.IsNullable.NullableAsString(), CompareAttributes.Nullability);
-            error |= logger.CheckDifferent((pRel.DefaultValueSql ?? pRel.DefaultValue?.ToString()).RemoveUnnecessaryBrackets(), 
-                column.DefaultValueSql.RemoveUnnecessaryBrackets(), CompareAttributes.DefaultValueSql);
+            var pRel = property.Relational();;
+            var error = logger.CheckDifferent(pRel.ColumnType, column.StoreType, CompareAttributes.ColumnType, _caseComparison);
+            error |= logger.CheckDifferent(property.IsNullable.NullableAsString(), column.IsNullable.NullableAsString(), CompareAttributes.Nullability, _caseComparison);
             error |= logger.CheckDifferent(pRel.ComputedColumnSql.RemoveUnnecessaryBrackets(), 
-                column.ComputedColumnSql.RemoveUnnecessaryBrackets(), CompareAttributes.ComputedColumnSql);
+                column.ComputedColumnSql.RemoveUnnecessaryBrackets(), CompareAttributes.ComputedColumnSql, _caseComparison);
+            var defaultValue = pRel.DefaultValueSql ?? pRel.DefaultValue?.ToString();
+            error |= logger.CheckDifferent(defaultValue.RemoveUnnecessaryBrackets(),
+                    column.DefaultValueSql.RemoveUnnecessaryBrackets(), CompareAttributes.DefaultValueSql, _caseComparison);
             error |= CheckValueGenerated(logger, property, column);
             return error;
         }
@@ -254,7 +261,7 @@ namespace TestSupport.EfSchemeCompare.Internal
 
         private bool CheckValueGenerated(CompareLogger logger, IProperty property, DatabaseColumn column)
         {
-            var colValGen = column.ValueGenerated.ConvertNullableValueGenerated(column.DefaultValueSql);
+            var colValGen = column.ValueGenerated.ConvertNullableValueGenerated(column.ComputedColumnSql, column.DefaultValueSql);            
             if (colValGen == ValueGenerated.Never.ToString()
                 //There is a case where the property is part of the primary key and the key is not set in the database
                 && property.ValueGenerated == ValueGenerated.OnAdd
@@ -263,8 +270,7 @@ namespace TestSupport.EfSchemeCompare.Internal
                 && !IntegerTypes.Contains(property.ClrType))
                 return false;
             return logger.CheckDifferent(property.ValueGenerated.ToString(),
-                colValGen, CompareAttributes.ValueGenerated);
+                colValGen, CompareAttributes.ValueGenerated, _caseComparison);
         }
-
     }
 }

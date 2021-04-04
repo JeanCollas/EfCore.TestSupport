@@ -187,6 +187,33 @@ namespace Test.UnitTests.EfSchemaCompare
                     "EXTRA IN DATABASE: MyEntity->PrimaryKey 'PK_MyEntites', column name. Found = MyEntityId");
             }
         }
+
+        [Fact]
+        public void CompareDiffIndexes()
+        {
+            //SETUP
+            var optionsBuilder = new DbContextOptionsBuilder<MyEntityIndexesDbContext>();
+            optionsBuilder.UseSqlServer(_connectionString);
+            using (var context = new MyEntityIndexesDbContext(optionsBuilder.Options))
+            {
+                var handler = new Stage1Comparer(context.Model, context.GetType().Name);
+
+                //ATTEMPT
+                var hasErrors = handler.CompareModelToDatabase(_databaseModel);
+
+                //VERIFY
+                hasErrors.ShouldBeTrue();
+                var errors = CompareLog.ListAllErrors(handler.Logs).ToList();
+                errors.Count.ShouldEqual(3);
+                errors[0].ShouldEqual(
+                    "DIFFERENT: MyEntity->Property 'MyString', column type. Expected = nvarchar(450), found = nvarchar(max)");
+                errors[1].ShouldEqual(
+                    "NOT IN DATABASE: MyEntity->Index 'MyInt', index constraint name. Expected = MySpecialName");
+                errors[2].ShouldEqual(
+                    "NOT IN DATABASE: MyEntity->Index 'MyString', index constraint name. Expected = IX_MyEntites_MyString");
+            }
+        }
+
         [Fact]
         public void ComparePropertyComputedColName()
         {
@@ -240,11 +267,9 @@ namespace Test.UnitTests.EfSchemaCompare
                 hasErrors.ShouldBeTrue();
                 //The setting of a computed col changed the column type
                 var errors = CompareLog.ListAllErrors(handler.Logs).ToList();
-                errors.Count.ShouldEqual(2);
+                errors.Count.ShouldEqual(1);
                 errors[0].ShouldEqual(
                     "DIFFERENT: MyEntity->Property 'MyDateTime', column type. Expected = datetime2, found = datetime");
-                errors[1].ShouldEqual(
-                    "DIFFERENT: MyEntity->Property 'MyDateTime', value generated. Expected = OnAddOrUpdate, found = Never");
             }
         }
 
@@ -274,11 +299,13 @@ namespace Test.UnitTests.EfSchemaCompare
                 //VERIFY
                 hasErrors.ShouldBeTrue();
                 var errors = CompareLog.ListAllErrors(handler.Logs).ToList();
-                errors.Count.ShouldEqual(2);
+                errors.Count.ShouldEqual(3);
                 errors[0].ShouldEqual(
                     "DIFFERENT: MyEntity->Property 'MyDateTime', column type. Expected = datetime2, found = datetime");
                 errors[1].ShouldEqual(
                     "DIFFERENT: MyEntity->Property 'MyDateTime', computed column sql. Expected = <null>, found = getutcdate()");
+                errors[2].ShouldEqual(
+                    "DIFFERENT: MyEntity->Property 'MyDateTime', value generated. Expected = Never, found = OnAddOrUpdate");
             }
         }
 
@@ -334,8 +361,6 @@ namespace Test.UnitTests.EfSchemaCompare
 
                 //VERIFY
                 hasErrors.ShouldBeFalse();
-                //CompareLog.ListAllErrors(handler.Logs).Single().ShouldEqual(
-                //    "DIFFERENT: Property 'MyInt', value generated. Expected = OnAdd, found = Never");
             }
         }
 

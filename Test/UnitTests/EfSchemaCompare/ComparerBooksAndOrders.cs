@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using DataLayer.BookApp.EfCode;
 using DataLayer.EfCode.BookApp;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -98,12 +99,29 @@ namespace Test.UnitTests.EfSchemaCompare
         }
 
         [Fact]
-        public void CompareBookAgainstBookOrderDatabaseHasErrors()
+        public void CompareBookAgainstBookOrderDatabaseExtraTablesIgnored()
         {
             //SETUP
             using (var context = new BookContext(GetBookContextOptions()))
             {
                 var comparer = new CompareEfSql();
+
+                //ATTEMPT
+                var hasErrors = comparer.CompareEfWithDb(_connectionString, context);
+
+                //VERIFY
+                hasErrors.ShouldBeFalse();
+            }
+        }
+
+        [Fact]
+        public void CompareBookAgainstBookOrderDatabaseHasErrors()
+        {
+            //SETUP
+            using (var context = new BookContext(GetBookContextOptions()))
+            {
+                var config = new CompareEfSqlConfig {TablesToIgnoreCommaDelimited = ""};
+                var comparer = new CompareEfSql(config);
 
                 //ATTEMPT
                 var hasErrors = comparer.CompareEfWithDb(_connectionString, context);
@@ -174,6 +192,27 @@ namespace Test.UnitTests.EfSchemaCompare
 
                 //VERIFY
                 ex.Message.ShouldEqual("The TablesToIgnoreCommaDelimited config property contains a table name of 'BadTableName', which was not found in the database");
+            }
+        }
+
+        [Fact]
+        public void CompareBookThenOrderAgainstBookOnlyDatabase()
+        {
+            //SETUP
+            var options1 = GetBookContextOptions();
+            var options2 = this.CreateUniqueMethodOptions<OrderContext>();
+            using (var context1 = new BookContext(options1))
+            using (var context2 = new OrderContext(options2))
+            {
+                var comparer = new CompareEfSql();
+
+                //ATTEMPT
+                var hasErrors = comparer.CompareEfWithDb( context1, context2);
+
+                //VERIFY
+                hasErrors.ShouldBeTrue(comparer.GetAllErrors);
+                comparer.GetAllErrors.ShouldEqual(@"NOT IN DATABASE: Entity 'LineItem', table name. Expected = LineItem
+NOT IN DATABASE: Entity 'Order', table name. Expected = Orders");
             }
         }
 

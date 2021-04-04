@@ -1,5 +1,46 @@
 # Release notes
 
+## TODO
+
+
+## 2.0.0
+
+- BREAKING CHANGE: By default EfSchemaCompare to only scan the tables that the entity classes map to - see issue #18.
+- Improvement: EfSchemaCompare now has case insensitive table, schema, columns, etc. matching feature - see issues #9 and #19.
+- BREAKING CHANGE: In EfSchemaCompare missing indexes are now referred to by "index constraint name" instead of "constraint name" - this was done as part of case insensitivity 
+- Bug fix: EfSchemaCompare default SQL value handled improved, plus now sets the correct ValueGenerated - see issue #15
+- Bug fix: Fixed problem with serializing/deserializing DDD-styled entity classes.
+
+## 1.9.0
+
+- Added seed test data from production database - see [Seed from Production feature](https://github.com/JonPSmith/EfCore.TestSupport/wiki/Seed-from-Production-feature) in Wiki docs.
+
+## 1.8.0
+- Improvement: CompareEfSql now recoginises unique indexes provided by constraints (rather than via the normal SQL Index statement)
+- Improvement: CompareEfSqlConfig.TablesToIgnoreCommaDelimited should trim tables names are ignore null entries
+- Feature: Added WipeCreateDatabase extension method - useful for creating empty database prior to using SQL to add tables etc.
+
+## 1.7.0
+- Feature: Added DecodeMessage feature to LogOutput. Tries to recreate the actual SQL to allow cut/paste 
+- Bug fix: Minor format error in ToString of LogOutput - adds an unwanted comma after log type if used for non-EF Core logs.
+
+## 1.6.1 
+- Bug fix: Added LogLevel to ...WithLogging versions of Sqlite/SQL server option builders.
+- 
+## 1.6.0
+- Feature. Added new way to capture EF Core logging output, which is superior to the existing SetupLogging method. See EfCore.TestSupport Wiki page "Capture EF Core logging".
+- Bug fix: SetupLogging is now marked as obsolete, but not removed so that existing unit tests don't break. 
+
+## 1.5.2
+- Bug fix: CompareEfSql no longer fails when there there isn't a primary key in a DbQuery - issue #8
+- Feature: CompareEfSql outputs a single warning if any DbQuery types are found, as it cannot check DbQuery types - issue #11
+
+## 1.5.1
+- Bug fix: Fixed bug in CompareEfSql where two tables have the same name, but different schemas, caused an exception
+
+## 1.5.0
+- New Feature: Added GetConfiguration which takes a relative directory string. This allows you to access configurations in other projects or subdirectories.
+
 ## 1.4.0
 - Package: Updated to .NET Core 2.1 and EF Core 2.1
 
