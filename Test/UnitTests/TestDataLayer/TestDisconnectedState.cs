@@ -19,19 +19,19 @@ namespace Test.UnitTests.TestDataLayer
         {
             //SETUP
             var options = SqliteInMemory
-                .CreateOptions<BookContext>(false);
+                .CreateOptions<BookContext>();
             using (var context = new BookContext(options))
             {
                 context.Database.EnsureCreated();  //#A
                 context.SeedDatabaseFourBooks();   //#A
 
                 //ATTEMPT
-                var book = context.Books.Last();            //#B
+                var book = context.Books.OrderByDescending(x => x.BookId).First();            //#B
                 book.Reviews.Add( new Review{NumStars = 5});//#C
                 context.SaveChanges();   //#D
 
                 //VERIFY
-                context.Books.Last().Reviews
+                context.Books.OrderByDescending(x => x.BookId).First().Reviews
                     .Count.ShouldEqual(3); //#E
             }
         }
@@ -48,7 +48,7 @@ namespace Test.UnitTests.TestDataLayer
         {
             //SETUP
             var options = SqliteInMemory         //#A
-                .CreateOptions<BookContext>(false); //#A
+                .CreateOptions<BookContext>(); //#A
             using (var context = new BookContext(options))//#B
             {
                 context.Database.EnsureCreated();
@@ -57,7 +57,7 @@ namespace Test.UnitTests.TestDataLayer
             using (var context = new BookContext(options))//#D
             {
                 //ATTEMPT
-                var book = context.Books.Last();              //#E
+                var book = context.Books.OrderByDescending(x => x.BookId).First();              //#E
                 var ex = Assert.Throws<NullReferenceException>( //#F
                     () => book.Reviews.Add(                     //#F
                         new Review { NumStars = 5 }));          //#F

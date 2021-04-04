@@ -1,6 +1,21 @@
 # Release notes
 
+
+## Possible new features
+
+- Make EfSchemaCompare handle Views as well.
+
 ## TODO
+
+## 3.0.0
+
+- Support both EF Core >=2.1 and EF Core >=3.0 by supporting NetStandard2.0 and NetStandard2.1. 
+- Bug fix: GetAllErrors() in CompareEfSql should use Environment.NewLine. See issue #20.
+- Obsolete: Remove LogSetupHelper as obsolete, use `CreateOptionsWithLogging` for Sqlite and SQL Server. 
+
+## 2.0.1
+
+- Bug fix: Seed from Production's WriteJsonToJsonFile and ReadSeedDataFromJsonFile didn't get the calling assembly - see issue #21 (thanks to @Selmirrrrr for spotting this)
 
 
 ## 2.0.0

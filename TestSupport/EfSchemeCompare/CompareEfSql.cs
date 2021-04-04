@@ -19,7 +19,7 @@ using TestSupport.Helpers;
 namespace TestSupport.EfSchemeCompare
 {
     /// <summary>
-    /// This is the main class for Comparing EF Core DbContexts againsts a database to see if they differ
+    /// This is the main class for Comparing EF Core DbContexts against a database to see if they differ
     /// </summary>
     public class CompareEfSql
     {
@@ -44,7 +44,7 @@ namespace TestSupport.EfSchemeCompare
         /// This returns a single string containing all the errors found
         /// Each error is on a separate line
         /// </summary>
-        public string GetAllErrors => string.Join("\n", CompareLog.ListAllErrors(Logs));
+        public string GetAllErrors => string.Join(Environment.NewLine, CompareLog.ListAllErrors(Logs));
         public string GetAllErrorsHtml => string.Join("<br/>\n", CompareLog.ListAllErrorsHtml(Logs));
 
         /// <summary>
@@ -152,21 +152,30 @@ namespace TestSupport.EfSchemeCompare
                 ? contexts[0].Database.GetDbConnection().ConnectionString
                 : GetConfigurationOrActualString(configOrConnectionString);
 
+#if NETSTANDARD2_0
             var databaseModel = factory.Create(connectionString, new string[] { }, new string[] { });
+#elif NETSTANDARD2_1
+            var databaseModel = factory.Create(connectionString,
+                new DatabaseModelFactoryOptions(new string[] { }, new string[] { }));
+#endif
             RemoveAnyTableToIgnore(databaseModel, contexts);
             return databaseModel;
         }
 
         private void RemoveAnyTableToIgnore(DatabaseModel databaseModel, DbContext[] contexts)
-            {
+        {
 
             var tablesToRemove = new List<DatabaseTable>();
             if (_config.TablesToIgnoreCommaDelimited == null)
             {
                 //We remove all tables not mapped by the contexts
-
+#if NETSTANDARD2_0
                 var tablesInContext = contexts.SelectMany(x => x.Model.GetEntityTypes()).Where(x => !x.IsQueryType)
                     .Select(x => x.Relational().FormSchemaTable()).ToList();
+#elif NETSTANDARD2_1
+                var tablesInContext = contexts.SelectMany(x => x.Model.GetEntityTypes()).Where(x => x.FindPrimaryKey() != null)
+                    .Select(x => x.FormSchemaTable()).ToList();
+#endif
                 tablesToRemove = databaseModel.Tables
                     .Where(x => !tablesInContext.Contains(x.FormSchemaTable(databaseModel.DefaultSchema), StringComparer.InvariantCultureIgnoreCase)).ToList();
             }
@@ -188,9 +197,9 @@ namespace TestSupport.EfSchemeCompare
                     tablesToRemove.Add(tableToRemove);
                 }
             }
-                foreach (var tableToRemove in tablesToRemove)
-                {
-                    databaseModel.Tables.Remove(tableToRemove);
+            foreach (var tableToRemove in tablesToRemove)
+            {
+                databaseModel.Tables.Remove(tableToRemove);
             }
         }
 

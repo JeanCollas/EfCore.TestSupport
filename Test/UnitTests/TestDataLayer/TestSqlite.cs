@@ -1,6 +1,7 @@
 ﻿// Copyright (c) 2017 Jon P Smith, GitHub: JonPSmith, web: http://www.thereformedprogrammer.net/
 // Licensed under MIT licence. See License.txt in the project root for license information.
 
+using System;
 using System.Linq;
 using DataLayer.EfCode.BookApp;
 using DataLayer.MyEntityDb;
@@ -89,26 +90,14 @@ namespace Test.UnitTests.TestDataLayer
             }
         }
 
+
+#if NETCOREAPP2_1
         [Fact]
         public void TestSqlLiteAcceptsComputedCol()
         {
             //SETUP
             var options = SqliteInMemory.CreateOptions<MyEntityComputedColDbContext>();
             using (var context = new MyEntityComputedColDbContext(options))
-            {
-                //ATTEMPT
-                context.Database.EnsureCreated();
-
-                //VERIFY
-            }
-        }
-
-        [Fact]
-        public void TestSqlLiteDoesAcceptSchema()
-        {
-            //SETUP
-            var options = SqliteInMemory.CreateOptions<DbContextWithSchema>();
-            using (var context = new DbContextWithSchema(options))
             {
                 //ATTEMPT
                 context.Database.EnsureCreated();
@@ -132,6 +121,36 @@ namespace Test.UnitTests.TestDataLayer
 
                 //VERIFY
                 Assert.StartsWith("SQLite Error 19: 'NOT NULL constraint failed:", ex.InnerException.Message);
+            }
+        }
+#elif NETCOREAPP3_0
+        [Fact]
+        public void TestSqlLiteDoesNotSupportComputedCol()
+        {
+            //SETUP
+            var options = SqliteInMemory.CreateOptions<MyEntityComputedColDbContext>();
+            using (var context = new MyEntityComputedColDbContext(options))
+            {
+                //ATTEMPT
+                var ex = Assert.Throws<NotSupportedException>(() => context.Database.EnsureCreated());
+
+                //VERIFY
+                ex.Message.ShouldStartWith("SQLite doesn't support computed columns.");
+            }
+        }
+#endif
+
+        [Fact]
+        public void TestSqlLiteDoesAcceptSchema()
+        {
+            //SETUP
+            var options = SqliteInMemory.CreateOptions<DbContextWithSchema>();
+            using (var context = new DbContextWithSchema(options))
+            {
+                //ATTEMPT
+                context.Database.EnsureCreated();
+
+                //VERIFY
             }
         }
 
